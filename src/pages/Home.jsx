@@ -1,37 +1,50 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { searchMovies } from "../services/omdb";
 
 export default function Home() {
+  const DEFAULT_QUERY = "marvel";
+  const DEBOUNCE_MS = 500;
   const [query, setQuery] = useState("");
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [searched, setSearched] = useState(false);
 
-  async function handleSearch(e) {
+  // the effect below does the fetching; just stop the page reloading on Enter
+  function handleSearch(e) {
     e.preventDefault();
-    if (!query.trim()) return;
-
-    setLoading(true);
-    setError("");
-    setSearched(true);
-
-    try {
-      const data = await searchMovies(query);
-      if (data.Response === "False") {
-        setMovies([]);
-        setError(data.Error || "No results found.");
-      } else {
-        setMovies(data.Search || []);
-      }
-    } catch (err) {
-      console.error("Search failed:", err);
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
-    }
   }
+
+  // debounced search — also covers the first open via DEFAULT_QUERY
+  useEffect(() => {
+    const term = query.trim() || DEFAULT_QUERY;
+    let ignore = false;
+    setLoading(true);
+
+    const timer = setTimeout(
+      async () => {
+        setError("");
+
+        try {
+          const data = await searchMovies(term);
+          if (ignore) return;
+          setMovies(data.Search || []);
+        } catch (err) {
+          if (ignore) return;
+          setMovies([]);
+          setError(err.message);
+        } finally {
+          if (!ignore) setLoading(false);
+        }
+      },
+      query ? DEBOUNCE_MS : 0,
+    );
+
+    return () => {
+      ignore = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   return (
     <div>
@@ -61,8 +74,8 @@ export default function Home() {
 
       {!loading && error && <div className="state">{error}</div>}
 
-      {!loading && !error && !searched && (
-        <div className="state">Start typing to discover movies.</div>
+      {!loading && !error && movies.length === 0 && (
+        <div className="state">No movies found.</div>
       )}
 
       {!loading && !error && movies.length > 0 && (
